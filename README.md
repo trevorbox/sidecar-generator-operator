@@ -1,0 +1,1 @@
+# sidecar-generator-operator
