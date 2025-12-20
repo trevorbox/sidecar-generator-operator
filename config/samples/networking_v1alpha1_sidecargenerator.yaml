@@ -1,0 +1,10 @@
+apiVersion: networking.example.com/v1alpha1
+kind: SidecarGenerator
+metadata:
+  labels:
+    app.kubernetes.io/name: sidecar-generator-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: sidecargenerator-sample
+spec:
+  url: "https://example.com/dependencies"
+  refreshPeriod: 2m 
