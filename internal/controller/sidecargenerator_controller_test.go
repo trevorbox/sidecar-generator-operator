@@ -18,19 +18,30 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/ghttp"
+	v1alpha3 "istio.io/api/networking/v1alpha3"
+	networking "istio.io/client-go/pkg/apis/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	networkingv1alpha1 "github.com/trevorbox/sidecar-generator-operator/api/v1alpha1"
 )
 
 var _ = Describe("SidecarGenerator Controller", func() {
+	var (
+		server     *ghttp.Server
+		statusCode int
+		body       []byte
+		path       string
+		addr       string
+	)
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
@@ -43,6 +54,28 @@ var _ = Describe("SidecarGenerator Controller", func() {
 		sidecargenerator := &networkingv1alpha1.SidecarGenerator{}
 
 		BeforeEach(func() {
+
+			server = ghttp.NewServer()
+			statusCode = 200
+			path = "/"
+			example := []*v1alpha3.IstioEgressListener{
+				{
+					Hosts: []string{"./*", "istio-system/*", "ns1/*"},
+				},
+			}
+
+			b, errr := json.Marshal(example)
+			if errr != nil {
+				fmt.Printf("Error: %s", errr)
+			}
+
+			body = b
+			addr = "http://" + server.Addr() + path
+			server.AppendHandlers(
+				ghttp.CombineHandlers(
+					ghttp.VerifyRequest("GET", path),
+					ghttp.RespondWithPtr(&statusCode, &body),
+				))
 			By("creating the custom resource for the Kind SidecarGenerator")
 			err := k8sClient.Get(ctx, typeNamespacedName, sidecargenerator)
 			if err != nil && errors.IsNotFound(err) {
@@ -52,6 +85,9 @@ var _ = Describe("SidecarGenerator Controller", func() {
 						Namespace: "default",
 					},
 					// TODO(user): Specify other spec details if needed.
+					Spec: networkingv1alpha1.SidecarGeneratorSpec{
+						URL: addr,
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
@@ -79,6 +115,9 @@ var _ = Describe("SidecarGenerator Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
+			resource := &networking.Sidecar{}
+			k8sClient.Get(ctx, typeNamespacedName, resource)
+			Expect(resource.Spec.Egress).To(HaveLen(1))
 		})
 	})
 })

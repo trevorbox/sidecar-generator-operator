@@ -7,4 +7,4 @@ metadata:
   name: sidecargenerator-sample
 spec:
   url: "https://example.com/dependencies"
-  refreshPeriod: 2m 
+  refreshPeriod: 2m

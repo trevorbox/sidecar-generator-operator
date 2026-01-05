@@ -18,9 +18,16 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+
+	"net/http"
 
 	networkingv1alpha1 "github.com/trevorbox/sidecar-generator-operator/api/v1alpha1"
-	networking "istio.io/client-go/pkg/apis/networking/v1"
+	istioapi "istio.io/api/networking/v1"
+	istioclientgo "istio.io/client-go/pkg/apis/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,13 +54,59 @@ type SidecarGeneratorReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
-	s := &networking.Sidecar{}
+	instance := &networkingv1alpha1.SidecarGenerator{}
 
-	err := r.Client.Get(ctx, req.NamespacedName, s)
+	err := r.Client.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
+		// Handle not found error
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	response, err := http.Get(instance.Spec.URL)
+
+	if err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		log.Error(err, "Failed to read response body")
+
+	}
+	defer response.Body.Close()
+
+	egress := []*istioapi.IstioEgressListener{}
+
+	fmt.Printf("Response Body: %s\n", string(body))
+	log.Info(fmt.Sprintf("Response Body: %s", string(body)))
+
+	err = json.Unmarshal(body, &egress)
+	if err != nil {
+		log.Error(err, "Failed to unmarshal JSON")
+	}
+
+	sidecar := &istioclientgo.Sidecar{}
+	err = r.Get(ctx, req.NamespacedName, sidecar)
+	if err != nil {
+		log.Info("There is no existing Sidecar resource, creating one...")
+
+		sidecar := &istioclientgo.Sidecar{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "networking.istio.io/v1",
+				Kind:       "Sidecar",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      instance.Name,
+				Namespace: instance.Namespace,
+			},
+			Spec: istioapi.Sidecar{
+				Egress: egress,
+			},
+		}
+
+		r.Create(ctx, sidecar)
 		// Handle not found error
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
