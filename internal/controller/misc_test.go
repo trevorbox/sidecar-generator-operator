@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"testing"
 
-	v1alpha3 "istio.io/api/networking/v1alpha3"
+	istioiov1api "istio.io/api/networking/v1"
 )
 
 func TestMain(t *testing.T) {
-	example := []*v1alpha3.IstioEgressListener{}
-	e := &v1alpha3.IstioEgressListener{}
+	example := []*istioiov1api.IstioEgressListener{}
+	e := &istioiov1api.IstioEgressListener{}
 	e.Hosts = []string{"./*", "istio-system/*", "ns1/*"}
 	example = append(example, e)
 

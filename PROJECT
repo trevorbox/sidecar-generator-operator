@@ -20,4 +20,9 @@ resources:
   kind: SidecarGenerator
   path: github.com/trevorbox/sidecar-generator-operator/api/v1alpha1
   version: v1alpha1
+- domain: istio.io
+  external: true
+  kind: Sidecar
+  path: istio.io/client-go/pkg/apis/networking/v1
+  version: v1
 version: "3"

@@ -24,8 +24,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/ghttp"
-	v1alpha3 "istio.io/api/networking/v1alpha3"
-	networking "istio.io/client-go/pkg/apis/networking/v1"
+	istioiov1api "istio.io/api/networking/v1"
+	istioiov1 "istio.io/client-go/pkg/apis/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -58,7 +58,7 @@ var _ = Describe("SidecarGenerator Controller", func() {
 			server = ghttp.NewServer()
 			statusCode = 200
 			path = "/"
-			example := []*v1alpha3.IstioEgressListener{
+			example := []*istioiov1api.IstioEgressListener{
 				{
 					Hosts: []string{"./*", "istio-system/*", "ns1/*"},
 				},
@@ -115,7 +115,7 @@ var _ = Describe("SidecarGenerator Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
-			resource := &networking.Sidecar{}
+			resource := &istioiov1.Sidecar{}
 			k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(resource.Spec.Egress).To(HaveLen(1))
 		})

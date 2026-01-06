@@ -25,8 +25,8 @@ import (
 	"net/http"
 
 	networkingv1alpha1 "github.com/trevorbox/sidecar-generator-operator/api/v1alpha1"
-	istioapi "istio.io/api/networking/v1"
-	istioclientgo "istio.io/client-go/pkg/apis/networking/v1"
+	istioiov1api "istio.io/api/networking/v1"
+	istioiov1 "istio.io/client-go/pkg/apis/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -79,7 +79,7 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 	defer response.Body.Close()
 
-	egress := []*istioapi.IstioEgressListener{}
+	egress := []*istioiov1api.IstioEgressListener{}
 
 	fmt.Printf("Response Body: %s\n", string(body))
 	log.Info(fmt.Sprintf("Response Body: %s", string(body)))
@@ -89,12 +89,12 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		log.Error(err, "Failed to unmarshal JSON")
 	}
 
-	sidecar := &istioclientgo.Sidecar{}
+	sidecar := &istioiov1.Sidecar{}
 	err = r.Get(ctx, req.NamespacedName, sidecar)
 	if err != nil {
 		log.Info("There is no existing Sidecar resource, creating one...")
 
-		sidecar := &istioclientgo.Sidecar{
+		sidecar := &istioiov1.Sidecar{
 			TypeMeta: metav1.TypeMeta{
 				APIVersion: "networking.istio.io/v1",
 				Kind:       "Sidecar",
@@ -103,7 +103,7 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 				Name:      instance.Name,
 				Namespace: instance.Namespace,
 			},
-			Spec: istioapi.Sidecar{
+			Spec: istioiov1api.Sidecar{
 				Egress: egress,
 			},
 		}
