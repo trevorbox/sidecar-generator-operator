@@ -118,6 +118,9 @@ var _ = Describe("SidecarGenerator Controller", func() {
 			resource := &istioiov1.Sidecar{}
 			k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(resource.Spec.Egress).To(HaveLen(1))
+			resourceEgressJSON, err := json.Marshal(resource.Spec.Egress)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(resourceEgressJSON)).To(MatchJSON(string(body)))
 		})
 	})
 })
