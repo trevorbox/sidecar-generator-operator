@@ -48,6 +48,29 @@ spec:
                 description: URL is the URL where to make a GET requst to fetch dependency
                   information.
                 type: string
+              workloadSelector:
+                description: |-
+                  `WorkloadSelector` specifies the criteria used to determine if the
+                  `Gateway`, `Sidecar`, `EnvoyFilter`, `ServiceEntry`, or `DestinationRule`
+                  configuration can be applied to a proxy. The matching criteria
+                  includes the metadata associated with a proxy, workload instance
+                  info such as labels attached to the pod/VM, or any other info that
+                  the proxy provides to Istio during the initial handshake. If
+                  multiple conditions are specified, all conditions need to match in
+                  order for the workload instance to be selected. Currently, only
+                  label based selection mechanism is supported.
+                properties:
+                  labels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      One or more labels that indicate a specific set of pods/VMs
+                      on which the configuration should be applied. The scope of
+                      label search is restricted to the configuration namespace in which the
+                      the resource is present.
+                    maxProperties: 256
+                    type: object
+                type: object
             required:
             - refreshPeriod
             - url

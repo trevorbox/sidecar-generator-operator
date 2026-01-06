@@ -25,10 +25,10 @@ import (
 	"net/http"
 
 	networkingv1alpha1 "github.com/trevorbox/sidecar-generator-operator/api/v1alpha1"
+	"github.com/trevorbox/sidecar-generator-operator/internal/controller/utils"
 	istioiov1api "istio.io/api/networking/v1"
 	istioiov1 "istio.io/client-go/pkg/apis/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -36,8 +36,7 @@ import (
 
 // SidecarGeneratorReconciler reconciles a SidecarGenerator object
 type SidecarGeneratorReconciler struct {
-	client.Client
-	Scheme *runtime.Scheme
+	utils.ReconcilerBase
 }
 
 // +kubebuilder:rbac:groups=networking.example.com,resources=sidecargenerators,verbs=get;list;watch;create;update;patch;delete
@@ -60,7 +59,7 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	instance := &networkingv1alpha1.SidecarGenerator{}
 
-	err := r.Client.Get(ctx, req.NamespacedName, instance)
+	err := r.GetClient().Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		// Handle not found error
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -81,7 +80,6 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	egress := []*istioiov1api.IstioEgressListener{}
 
-	fmt.Printf("Response Body: %s\n", string(body))
 	log.Info(fmt.Sprintf("Response Body: %s", string(body)))
 
 	err = json.Unmarshal(body, &egress)
@@ -89,8 +87,11 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		log.Error(err, "Failed to unmarshal JSON")
 	}
 
+	log.Info("HELLO")
+
 	sidecar := &istioiov1.Sidecar{}
-	err = r.Get(ctx, req.NamespacedName, sidecar)
+
+	err = r.GetClient().Get(ctx, req.NamespacedName, sidecar)
 	if err != nil {
 		log.Info("There is no existing Sidecar resource, creating one...")
 
@@ -108,18 +109,70 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			},
 		}
 
-		r.Create(ctx, sidecar)
+		if instance.Spec.WorkloadSelector != nil {
+			sidecar.Spec.WorkloadSelector = &istioiov1api.WorkloadSelector{
+				Labels: instance.Spec.WorkloadSelector.Labels,
+			}
+		}
+
+		err = r.CreateOrUpdateResource(ctx, instance, instance.GetNamespace(), sidecar)
+		if err != nil {
+
+			return ctrl.Result{}, err
+		}
+		// err = utils.CreateOrUpdateResource(ctx, instance, instance.GetNamespace(), sidecar)
+		// if err != nil {
+		// 	return err
+		// }
 		// Handle not found error
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	} else {
+		log.Info("Existing Sidecar resource found, updating...")
+
+		sidecar.Spec.Egress = egress
+		if instance.Spec.WorkloadSelector != nil {
+			sidecar.Spec.WorkloadSelector = &istioiov1api.WorkloadSelector{
+				Labels: instance.Spec.WorkloadSelector.Labels,
+			}
+		}
+		err = r.CreateOrUpdateResource(ctx, instance, instance.GetNamespace(), sidecar)
+		if err != nil {
+
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil
 }
 
+// func (r *SidecarGeneratorReconciler) CreateOrUpdateResource(ctx context.Context, owner client.Object, namespace string, obj client.Object) error {
+// 	// Set owner reference
+// 	if owner != nil {
+// 		_ = ctrl.SetControllerReference(owner, obj, r.Scheme)
+// 	}
+
+// 	if namespace != "" {
+// 		obj.SetNamespace(namespace)
+// 	}
+
+// 	// Try to get the existing resource
+// 	existing := obj.DeepCopyObject().(client.Object)
+// 	err := r.Get(ctx, client.ObjectKey{Namespace: obj.GetNamespace(), Name: obj.GetName()}, existing)
+// 	if err != nil {
+// 		// Resource does not exist, create it
+// 		return r.Create(ctx, obj)
+// 	}
+
+// 	// Resource exists, update it
+// 	obj.SetResourceVersion(existing.GetResourceVersion())
+// 	return r.Update(ctx, obj)
+// }
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *SidecarGeneratorReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&networkingv1alpha1.SidecarGenerator{}).
+		// Owns(&istioiov1.Sidecar{}).
 		Named("sidecargenerator").
 		Complete(r)
 }

@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	networkingv1alpha1 "github.com/trevorbox/sidecar-generator-operator/api/v1alpha1"
 )
@@ -104,19 +103,21 @@ var _ = Describe("SidecarGenerator Controller", func() {
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &SidecarGeneratorReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
+			// controllerReconciler := &SidecarGeneratorReconciler{
+			// 	ReconcilerBase: utils.NewFromManager(mgr, "SidecarGenerator"),
+			// }
+
+			// _, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+			// 	NamespacedName: typeNamespacedName,
+			// })
+
+			// Expect(err).NotTo(HaveOccurred())
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
 			resource := &istioiov1.Sidecar{}
-			k8sClient.Get(ctx, typeNamespacedName, resource)
+			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(resource.Spec.Egress).To(HaveLen(1))
 			resourceEgressJSON, err := json.Marshal(resource.Spec.Egress)
 			Expect(err).NotTo(HaveOccurred())

@@ -42,6 +42,7 @@ import (
 
 	istioiov1 "istio.io/client-go/pkg/apis/networking/v1"
 	// +kubebuilder:scaffold:imports
+	"github.com/trevorbox/sidecar-generator-operator/internal/controller/utils"
 )
 
 var (
@@ -54,6 +55,7 @@ func init() {
 
 	utilruntime.Must(networkingv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(istioiov1.AddToScheme(scheme))
+
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -206,8 +208,9 @@ func main() {
 	}
 
 	if err := (&controller.SidecarGeneratorReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		ReconcilerBase: utils.NewFromManager(mgr, "SidecarGenerator"),
+		// Client: mgr.GetClient(),
+		// Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SidecarGenerator")
 		os.Exit(1)

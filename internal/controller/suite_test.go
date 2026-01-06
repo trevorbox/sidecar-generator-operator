@@ -27,12 +27,15 @@ import (
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	networkingv1alpha1 "github.com/trevorbox/sidecar-generator-operator/api/v1alpha1"
+	"github.com/trevorbox/sidecar-generator-operator/internal/controller/utils"
+
 	// +kubebuilder:scaffold:imports
 	istioiov1 "istio.io/client-go/pkg/apis/networking/v1"
 )
@@ -64,7 +67,6 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	err = istioiov1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
-	// scheme.Scheme.AddKnownTypes(istioiov1.SchemeGroupVersion)
 
 	// +kubebuilder:scaffold:scheme
 
@@ -90,6 +92,19 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme: scheme.Scheme,
+	})
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&SidecarGeneratorReconciler{ReconcilerBase: utils.NewFromManager(mgr, "SidecarGenerator")}).SetupWithManager(mgr)
+	Expect(err).ToNot(HaveOccurred())
+
+	go func() {
+		defer GinkgoRecover()
+		err = mgr.Start(ctx)
+		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
+	}()
 })
 
 var _ = AfterSuite(func() {

@@ -6,5 +6,8 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: sidecargenerator-sample
 spec:
+  workloadSelector:
+    labels:
+      app: ratings
   url: "https://example.com/dependencies"
   refreshPeriod: 2m
