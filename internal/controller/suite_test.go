@@ -34,6 +34,7 @@ import (
 
 	networkingv1alpha1 "github.com/trevorbox/sidecar-generator-operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
+	istiov1 "istio.io/client-go/pkg/apis/networking/v1"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -60,6 +61,8 @@ var _ = BeforeSuite(func() {
 
 	var err error
 	err = networkingv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = istiov1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme

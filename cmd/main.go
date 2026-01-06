@@ -39,7 +39,9 @@ import (
 
 	networkingv1alpha1 "github.com/trevorbox/sidecar-generator-operator/api/v1alpha1"
 	"github.com/trevorbox/sidecar-generator-operator/internal/controller"
+
 	// +kubebuilder:scaffold:imports
+	istiov1 "istio.io/client-go/pkg/apis/networking/v1"
 )
 
 var (
@@ -51,6 +53,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(networkingv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(istiov1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
