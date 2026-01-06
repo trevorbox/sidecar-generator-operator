@@ -109,7 +109,7 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: manifests generate fmt vet setup-envtest ## Run tests.
+test: manifests generate fmt vet fetch-external-crds setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
@@ -360,3 +360,12 @@ catalog-build: opm ## Build a catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
+
+.PHONY: fetch-external-crds
+ISTIO_CRD ?= ./config/crd/istio/crd-all.gen.yaml
+fetch-external-crds: ## Fetch external CRDs required by the operator and place them in config/crd/istio
+ifeq (,$(wildcard $(ISTIO_CRD)))
+	@echo "Fetching Istio CRDs..."
+	@mkdir -p ./config/crd/istio
+	@curl -sSLo ./config/crd/istio/crd-all.gen.yaml https://raw.githubusercontent.com/istio/istio/refs/heads/master/manifests/charts/base/files/crd-all.gen.yaml
+endif
