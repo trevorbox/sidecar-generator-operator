@@ -102,7 +102,7 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 				return ctrl.Result{}, updateErr
 			}
 			if computedHash != targetSidecar.Annotations[hashAnnotationName] {
-				log.Info("Sidecar spec has changed, updating Sidecar")
+				log.Info("Sidecar spec has changed, updating Sidecar", "oldSpec", &existingSidecar.Spec, "newSpec", &targetSidecar.Spec)
 				targetSidecar.ResourceVersion = existingSidecar.ResourceVersion
 				updateErr = r.Update(ctx, targetSidecar)
 			} else {
@@ -299,7 +299,6 @@ func (r *SidecarGeneratorReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return false
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			//Useful for debugging
 			secret, ok := e.Object.DeepCopyObject().(*istioiov1.Sidecar)
 			if !ok {
 				return false
@@ -327,7 +326,7 @@ const (
 )
 
 func (r *SidecarGeneratorReconciler) isOwnedSidecarByController(secret *istioiov1.Sidecar) bool {
-	for _, ownerRef := range secret.ObjectMeta.OwnerReferences {
+	for _, ownerRef := range secret.GetOwnerReferences() {
 		if ownerRef.Kind == sidecarGeneratorKind {
 			return true
 		}

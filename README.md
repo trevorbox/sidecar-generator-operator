@@ -24,5 +24,12 @@ make install run
 ## Push
 
 ```sh
+docker login quay.io
 make docker-build docker-push IMG="quay.io/trevorbox/sidecar-generator-operator:v0.0.1"
+```
+
+## Deploy
+
+```sh
+make deploy IMG="quay.io/trevorbox/sidecar-generator-operator:v0.0.1"
 ```
