@@ -52,7 +52,7 @@ type SidecarGeneratorReconciler struct {
 // +kubebuilder:rbac:groups=networking.example.com,resources=sidecargenerators,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.example.com,resources=sidecargenerators/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=networking.example.com,resources=sidecargenerators/finalizers,verbs=update
-// +kubebuilder:rbac:groups=networking.istio.io,resources=sidecars,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=networking.istio.io,resources=sidecars,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=networking.istio.io,resources=sidecars/status,verbs=get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to

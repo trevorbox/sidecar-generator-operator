@@ -35,6 +35,7 @@ rules:
   resources:
   - sidecars
   verbs:
+  - create
   - get
   - list
   - patch
