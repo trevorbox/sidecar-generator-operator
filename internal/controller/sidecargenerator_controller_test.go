@@ -99,7 +99,7 @@ var _ = Describe("SidecarGenerator Controller", func() {
 			By("Cleanup the specific resource instance SidecarGenerator")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 
-			//Close() should be called at the end of each test. It spins down and cleans up the test server.
+			// Close() should be called at the end of each test. It spins down and cleans up the test server.
 			server.Close()
 		})
 		It("should successfully reconcile the resource", func() {

@@ -49,10 +49,10 @@ type SidecarGeneratorStatus struct {
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
-	//LastSidecarGeneratorUpdate the last time when the URL was fetched and sidecar updated.
+	// LastSidecarGeneratorUpdate the last time when the URL was fetched and sidecar updated.
 	LastSidecarGeneratorUpdate *metav1.Time `json:"lastSidecarGeneratorUpdate,omitempty"`
 
-	//NextSidecarGeneratorUpdate the next time when the URL will be fetched to update the sidecar.
+	// NextSidecarGeneratorUpdate the next time when the URL will be fetched to update the sidecar.
 	NextSidecarGeneratorUpdate *metav1.Time `json:"nextSidecarGeneratorUpdate,omitempty"`
 }
 

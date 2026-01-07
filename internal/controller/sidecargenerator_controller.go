@@ -182,9 +182,13 @@ func getEgress(ctx context.Context, url string) ([]*istioiov1api.IstioEgressList
 		log.Error(err, "Failed to send HTTP request to URL", "url", url)
 		return nil, err
 	}
-	defer resp.Body.Close()
+
 	// 5. IMPORTANT: Close the body when the function exits
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	// 6. Check the status code
 	if resp.StatusCode != http.StatusOK {
