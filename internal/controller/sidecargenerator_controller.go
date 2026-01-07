@@ -62,7 +62,7 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	instance := &networkingv1alpha1.SidecarGenerator{}
 
-	err := r.Client.Get(ctx, req.NamespacedName, instance)
+	err := r.Get(ctx, req.NamespacedName, instance)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -160,12 +160,12 @@ func getEgress(ctx context.Context, url string) ([]*istioiov1api.IstioEgressList
 
 	log.Info("Fetching egress from URL", "url", url)
 
-	// 1. Define a client with a timeout (don't use the default client)
-	client := &http.Client{
+	// 1. Define a httpClient with a timeout (don't use the default httpClient)
+	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
 	}
 
-	// 2. Create the request
+	// 2. Create a new HTTP GET request
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		log.Error(err, "Error creating request", "url", url)
@@ -177,7 +177,7 @@ func getEgress(ctx context.Context, url string) ([]*istioiov1api.IstioEgressList
 	req.Header.Set("User-Agent", "SidecarGeneratorController/1.0")
 
 	// 4. Send the request
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Error(err, "Failed to send HTTP request to URL", "url", url)
 		return nil, err
@@ -203,8 +203,8 @@ func getEgress(ctx context.Context, url string) ([]*istioiov1api.IstioEgressList
 		return nil, err
 	}
 
+	// 8. Unmarshal the JSON response into the desired struct
 	egress := []*istioiov1api.IstioEgressListener{}
-
 	err = json.Unmarshal(body, &egress)
 	if err != nil {
 		log.Error(err, "Failed to unmarshal response body from URL", "url", url)
