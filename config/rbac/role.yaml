@@ -41,9 +41,3 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - networking.istio.io
-  resources:
-  - sidecars/status
-  verbs:
-  - get
