@@ -21,12 +21,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 
 	"net/http"
 
 	networkingv1alpha1 "github.com/trevorbox/sidecar-generator-operator/api/v1alpha1"
 	istioiov1api "istio.io/api/networking/v1"
 	istioiov1 "istio.io/client-go/pkg/apis/networking/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -61,59 +63,151 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	instance := &networkingv1alpha1.SidecarGenerator{}
 
 	err := r.Client.Get(ctx, req.NamespacedName, instance)
+
 	if err != nil {
-		// Handle not found error
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if errors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+			// Return and don't requeue
+			log.Info("SidecarGenerator resource not found. Ignoring since object must be deleted")
+			return ctrl.Result{}, nil
+		}
+		// Error reading the object - requeue the request.
+		log.Error(err, "Failed to get SidecarGenerator")
+		return ctrl.Result{}, err
 	}
 
-	response, err := http.Get(instance.Spec.URL)
+	egress, updateErr := getEgress(ctx, instance.Spec.URL)
+	// egress, updateErr := getTestEgress()
+	if updateErr != nil {
+		log.Error(updateErr, "Failed to get egress from URL")
+	} else {
+		sidecar := &istioiov1.Sidecar{}
+		getErr := r.Get(ctx, req.NamespacedName, sidecar)
+		if getErr != nil {
+			log.Info("There is no existing Sidecar resource, creating one...")
 
-	if err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+			sidecar := &istioiov1.Sidecar{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "networking.istio.io/v1",
+					Kind:       "Sidecar",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      instance.Name,
+					Namespace: instance.Namespace,
+					OwnerReferences: []metav1.OwnerReference{
+						*metav1.NewControllerRef(instance, instance.GroupVersionKind()),
+					},
+				},
+				Spec: istioiov1api.Sidecar{
+					Egress: egress,
+				},
+			}
+
+			updateErr = r.Create(ctx, sidecar)
+			if updateErr == nil {
+				log.Info("Created Sidecar")
+			}
+
+		} else {
+			log.Info("Updating existing Sidecar resource...")
+			sidecar.Spec.Egress = egress
+			updateErr = r.Update(ctx, sidecar)
+			if updateErr == nil {
+				log.Info("Updated Sidecar")
+			}
+		}
 	}
 
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		log.Error(err, "Failed to read response body")
+	now := metav1.Now()
+	instance.Status.LastSidecarGeneratorUpdate = &metav1.Time{Time: now.Time}
+	instance.Status.NextSidecarGeneratorUpdate = &metav1.Time{Time: now.Add(instance.Spec.RefreshPeriod.Duration)}
 
-	}
-	defer response.Body.Close()
-
-	egress := []*istioiov1api.IstioEgressListener{}
-
-	fmt.Printf("Response Body: %s\n", string(body))
-	log.Info(fmt.Sprintf("Response Body: %s", string(body)))
-
-	err = json.Unmarshal(body, &egress)
-	if err != nil {
-		log.Error(err, "Failed to unmarshal JSON")
-	}
-
-	sidecar := &istioiov1.Sidecar{}
-	err = r.Get(ctx, req.NamespacedName, sidecar)
-	if err != nil {
-		log.Info("There is no existing Sidecar resource, creating one...")
-
-		sidecar := &istioiov1.Sidecar{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: "networking.istio.io/v1",
-				Kind:       "Sidecar",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      instance.Name,
-				Namespace: instance.Namespace,
-			},
-			Spec: istioiov1api.Sidecar{
-				Egress: egress,
+	if updateErr != nil {
+		instance.Status.Conditions = []metav1.Condition{
+			{
+				Type:               "Reconciled",
+				Status:             metav1.ConditionFalse,
+				Reason:             "ReconcileError",
+				Message:            fmt.Sprintf("Failed to reconcile SidecarGenerator: %v", updateErr),
+				LastTransitionTime: now,
 			},
 		}
 
-		r.Create(ctx, sidecar)
-		// Handle not found error
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+	} else {
+		instance.Status.Conditions = []metav1.Condition{
+			{
+				Type:               "Reconciled",
+				Status:             metav1.ConditionTrue,
+				Reason:             "ReconcileSuccess",
+				Message:            "Successfully reconciled SidecarGenerator",
+				LastTransitionTime: now,
+			},
+		}
 	}
 
-	return ctrl.Result{}, nil
+	err = r.Status().Update(ctx, instance)
+	if err != nil {
+		log.Error(err, "Failed to update SidecarGenerator status")
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{Requeue: true, RequeueAfter: instance.Spec.RefreshPeriod.Duration}, err
+}
+
+func getEgress(ctx context.Context, url string) ([]*istioiov1api.IstioEgressListener, error) {
+	log := logf.FromContext(ctx)
+
+	log.Info("Fetching egress from URL", "url", url)
+
+	// 1. Define a client with a timeout (don't use the default client)
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	// 2. Create the request
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Error(err, "Error creating request", "url", url)
+		return nil, err
+	}
+
+	// 3. Add custom headers (optional)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "SidecarGeneratorController/1.0")
+
+	// 4. Send the request
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error(err, "Failed to send HTTP request to URL", "url", url)
+		return nil, err
+	}
+	defer resp.Body.Close()
+	// 5. IMPORTANT: Close the body when the function exits
+	defer resp.Body.Close()
+
+	// 6. Check the status code
+	if resp.StatusCode != http.StatusOK {
+		log.Error(fmt.Errorf("unexpected status code: %d", resp.StatusCode), "Status not OK", "url", url)
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	// 7. Read and process the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error(err, "Failed to read response body from URL", "url", url)
+		return nil, err
+	}
+
+	egress := []*istioiov1api.IstioEgressListener{}
+
+	err = json.Unmarshal(body, &egress)
+	if err != nil {
+		log.Error(err, "Failed to unmarshal response body from URL", "url", url)
+		return nil, err
+	}
+
+	return egress, err
 }
 
 // SetupWithManager sets up the controller with the Manager.
