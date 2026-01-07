@@ -18,12 +18,16 @@ package controller
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"time"
 
 	"net/http"
+
+	"crypto/sha256"
 
 	networkingv1alpha1 "github.com/trevorbox/sidecar-generator-operator/api/v1alpha1"
 	istioiov1api "istio.io/api/networking/v1"
@@ -32,8 +36,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 // SidecarGeneratorReconciler reconciles a SidecarGenerator object
@@ -69,7 +76,7 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
-			log.Info("SidecarGenerator resource not found. Ignoring since object must be deleted")
+			// log.Info("SidecarGenerator resource not found. Ignoring since object is most likely deleted")
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -77,46 +84,32 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	egress, updateErr := getEgress(ctx, instance.Spec.URL)
-	// egress, updateErr := getTestEgress()
+	targetSidecar, updateErr := generateSidecarFromInstance(instance)
 	if updateErr != nil {
-		log.Error(updateErr, "Failed to get egress from URL")
+		log.Error(updateErr, "Failed to create target sidecar spec from SidecarGenerator instance")
 	} else {
-		sidecar := &istioiov1.Sidecar{}
-		getErr := r.Get(ctx, req.NamespacedName, sidecar)
+		existingSidecar := &istioiov1.Sidecar{}
+		getErr := r.Get(ctx, req.NamespacedName, existingSidecar)
 		if getErr != nil {
-			log.Info("There is no existing Sidecar resource, creating one...")
-
-			sidecar := &istioiov1.Sidecar{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "networking.istio.io/v1",
-					Kind:       "Sidecar",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      instance.Name,
-					Namespace: instance.Namespace,
-					OwnerReferences: []metav1.OwnerReference{
-						*metav1.NewControllerRef(instance, instance.GroupVersionKind()),
-					},
-				},
-				Spec: istioiov1api.Sidecar{
-					Egress: egress,
-				},
-			}
-
-			updateErr = r.Create(ctx, sidecar)
-			if updateErr == nil {
-				log.Info("Created Sidecar")
-			}
-
+			// Sidecar does not exist - create it
+			updateErr = r.Create(ctx, targetSidecar)
 		} else {
-			log.Info("Updating existing Sidecar resource...")
-			sidecar.Spec.Egress = egress
-			updateErr = r.Update(ctx, sidecar)
-			if updateErr == nil {
-				log.Info("Updated Sidecar")
+			// Sidecar exists - update it if the spec has changed
+			computedHash, err := computeHash(&existingSidecar.Spec)
+			if err != nil {
+				log.Error(err, "Failed to compute hash for existing Sidecar spec")
+				updateErr = err
+				return ctrl.Result{}, updateErr
+			}
+			if computedHash != targetSidecar.Annotations[hashAnnotationName] {
+				log.Info("Sidecar spec has changed, updating Sidecar")
+				targetSidecar.ResourceVersion = existingSidecar.ResourceVersion
+				updateErr = r.Update(ctx, targetSidecar)
+			} else {
+				log.Info("Sidecar spec is up to date, no update required")
 			}
 		}
+
 	}
 
 	now := metav1.Now()
@@ -124,6 +117,7 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	instance.Status.NextSidecarGeneratorUpdate = &metav1.Time{Time: now.Add(instance.Spec.RefreshPeriod.Duration)}
 
 	if updateErr != nil {
+		log.Error(updateErr, "Failed to reconcile SidecarGenerator")
 		instance.Status.Conditions = []metav1.Condition{
 			{
 				Type:               "Reconciled",
@@ -152,23 +146,62 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{Requeue: true, RequeueAfter: instance.Spec.RefreshPeriod.Duration}, err
+	return ctrl.Result{RequeueAfter: instance.Spec.RefreshPeriod.Duration}, err
 }
 
-func getEgress(ctx context.Context, url string) ([]*istioiov1api.IstioEgressListener, error) {
-	log := logf.FromContext(ctx)
+func generateSidecarFromInstance(instance *networkingv1alpha1.SidecarGenerator) (*istioiov1.Sidecar, error) {
+	egress, err := getEgress(instance.Spec.URL, instance.Spec.InsecureSkipTLSVerify)
+	if err != nil {
+		return nil, err
+	}
+	sidecar := &istioiov1.Sidecar{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "networking.istio.io/v1",
+			Kind:       "Sidecar",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name,
+			Namespace: instance.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(instance, instance.GroupVersionKind()),
+			},
+		},
+		Spec: istioiov1api.Sidecar{
+			Egress: egress,
+		},
+	}
+	if instance.Spec.WorkloadSelector != nil {
+		sidecar.Spec.WorkloadSelector = &istioiov1api.WorkloadSelector{
+			Labels: instance.Spec.WorkloadSelector.Labels,
+		}
+	}
 
-	log.Info("Fetching egress from URL", "url", url)
+	computedHash, err := computeHash(&sidecar.Spec)
+	if err != nil {
+		return nil, err
+	}
+	sidecar.SetAnnotations(
+		map[string]string{
+			hashAnnotationName: computedHash,
+		},
+	)
+	return sidecar, nil
+}
 
+func getEgress(url string, insecureSkipTLSVerify bool) ([]*istioiov1api.IstioEgressListener, error) {
 	// 1. Define a httpClient with a timeout (don't use the default httpClient)
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: insecureSkipTLSVerify,
+			},
+		},
 	}
 
 	// 2. Create a new HTTP GET request
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		log.Error(err, "Error creating request", "url", url)
 		return nil, err
 	}
 
@@ -179,7 +212,6 @@ func getEgress(ctx context.Context, url string) ([]*istioiov1api.IstioEgressList
 	// 4. Send the request
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		log.Error(err, "Failed to send HTTP request to URL", "url", url)
 		return nil, err
 	}
 
@@ -192,14 +224,12 @@ func getEgress(ctx context.Context, url string) ([]*istioiov1api.IstioEgressList
 
 	// 6. Check the status code
 	if resp.StatusCode != http.StatusOK {
-		log.Error(fmt.Errorf("unexpected status code: %d", resp.StatusCode), "Status not OK", "url", url)
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected status code: %d for url %s", resp.StatusCode, url)
 	}
 
 	// 7. Read and process the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error(err, "Failed to read response body from URL", "url", url)
 		return nil, err
 	}
 
@@ -207,7 +237,6 @@ func getEgress(ctx context.Context, url string) ([]*istioiov1api.IstioEgressList
 	egress := []*istioiov1api.IstioEgressListener{}
 	err = json.Unmarshal(body, &egress)
 	if err != nil {
-		log.Error(err, "Failed to unmarshal response body from URL", "url", url)
 		return nil, err
 	}
 
@@ -216,8 +245,107 @@ func getEgress(ctx context.Context, url string) ([]*istioiov1api.IstioEgressList
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *SidecarGeneratorReconciler) SetupWithManager(mgr ctrl.Manager) error {
+
+	sidecarGeneratorPredicate := predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			new, ok := e.ObjectNew.DeepCopyObject().(*networkingv1alpha1.SidecarGenerator)
+			if !ok {
+				return false
+			}
+			old, ok := e.ObjectOld.DeepCopyObject().(*networkingv1alpha1.SidecarGenerator)
+			if !ok {
+				return false
+			}
+
+			if !new.GetDeletionTimestamp().IsZero() {
+				return true
+			}
+
+			if !reflect.DeepEqual(old.Spec, new.Spec) {
+				return true
+			}
+
+			return false
+		},
+		CreateFunc: func(e event.CreateEvent) bool {
+			return true
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return true
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
+
+	sidecarPredicate := predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			new, ok := e.ObjectNew.DeepCopyObject().(*istioiov1.Sidecar)
+			if !ok {
+				return false
+			}
+
+			if r.isOwnedSidecarByController(new) {
+				hash := new.Annotations[hashAnnotationName]
+				computedhash, err := computeHash(&new.Spec)
+				if err == nil && hash != computedhash {
+					return true
+				}
+			}
+
+			return false
+		},
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			//Useful for debugging
+			secret, ok := e.Object.DeepCopyObject().(*istioiov1.Sidecar)
+			if !ok {
+				return false
+			}
+			if r.isOwnedSidecarByController(secret) {
+				return true
+			}
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&networkingv1alpha1.SidecarGenerator{}).
+		For(&networkingv1alpha1.SidecarGenerator{}, builder.WithPredicates(sidecarGeneratorPredicate)).
+		Owns(&istioiov1.Sidecar{}, builder.WithPredicates(sidecarPredicate)).
 		Named("sidecargenerator").
 		Complete(r)
+}
+
+const (
+	hashAnnotationName   = "sidecar-generator-operator/sidecar-spec-hash"
+	sidecarGeneratorKind = "SidecarGenerator"
+)
+
+func (r *SidecarGeneratorReconciler) isOwnedSidecarByController(secret *istioiov1.Sidecar) bool {
+	for _, ownerRef := range secret.ObjectMeta.OwnerReferences {
+		if ownerRef.Kind == sidecarGeneratorKind {
+			return true
+		}
+	}
+	return false
+}
+
+func computeHash(spec interface{}) (string, error) {
+	// 1. Marshal the spec to JSON
+	data, err := json.Marshal(spec)
+
+	if err != nil {
+		return "", err
+	}
+
+	// 2. Compute SHA256 hash
+	hash := sha256.Sum256(data)
+
+	// 3. Return as a hex string
+	return fmt.Sprintf("%x", hash), nil
 }
