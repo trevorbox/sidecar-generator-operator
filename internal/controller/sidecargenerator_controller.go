@@ -91,6 +91,7 @@ func (r *SidecarGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		getErr := r.Get(ctx, req.NamespacedName, existingSidecar)
 		if getErr != nil {
 			// Sidecar does not exist - create it
+			log.Info("Sidecar does not exist, creating it", "spec", &targetSidecar.Spec)
 			updateErr = r.Create(ctx, targetSidecar)
 		} else {
 			// Sidecar exists - update it if the spec has changed
