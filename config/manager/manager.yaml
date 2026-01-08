@@ -26,6 +26,8 @@ spec:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
+        proxy.istio.io/config: |
+          holdApplicationUntilProxyStarts: true
       labels:
         control-plane: controller-manager
         app.kubernetes.io/name: sidecar-generator-operator
