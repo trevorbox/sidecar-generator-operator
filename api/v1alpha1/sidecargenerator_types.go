@@ -36,6 +36,23 @@ type SidecarGeneratorSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:default="1h"
 	RefreshPeriod *metav1.Duration `json:"refreshPeriod,omitempty"`
+
+	// InsecureSkipTLSVerify skips TLS certificate verification when fetching the URL.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default=false
+	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
+
+	// `WorkloadSelector` specifies the criteria used to determine if the
+	// `Gateway`, `Sidecar`, `EnvoyFilter`, `ServiceEntry`, or `DestinationRule`
+	// configuration can be applied to a proxy. The matching criteria
+	// includes the metadata associated with a proxy, workload instance
+	// info such as labels attached to the pod/VM, or any other info that
+	// the proxy provides to Istio during the initial handshake. If
+	// multiple conditions are specified, all conditions need to match in
+	// order for the workload instance to be selected. Currently, only
+	// label based selection mechanism is supported.
+	// +kubebuilder:validation:Optional
+	WorkloadSelector *WorkloadSelector `json:"workloadSelector,omitempty"`
 }
 
 // SidecarGeneratorStatus defines the observed state of SidecarGenerator.
@@ -49,10 +66,10 @@ type SidecarGeneratorStatus struct {
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
-	//LastSidecarGeneratorUpdate the last time when the URL was fetched and sidecar updated.
+	// LastSidecarGeneratorUpdate the last time when the URL was fetched and sidecar updated.
 	LastSidecarGeneratorUpdate *metav1.Time `json:"lastSidecarGeneratorUpdate,omitempty"`
 
-	//NextSidecarGeneratorUpdate the next time when the URL will be fetched to update the sidecar.
+	// NextSidecarGeneratorUpdate the next time when the URL will be fetched to update the sidecar.
 	NextSidecarGeneratorUpdate *metav1.Time `json:"nextSidecarGeneratorUpdate,omitempty"`
 }
 
@@ -79,4 +96,15 @@ type SidecarGeneratorList struct {
 
 func init() {
 	SchemeBuilder.Register(&SidecarGenerator{}, &SidecarGeneratorList{})
+}
+
+type WorkloadSelector struct {
+	// One or more labels that indicate a specific set of pods/VMs
+	// on which the configuration should be applied. The scope of
+	// label search is restricted to the configuration namespace in which the
+	// the resource is present.
+	// +kubebuilder:validation:MaxProperties=256
+	// +protoc-gen-crd:map-value-validation:MaxLength=63
+	// +protoc-gen-crd:map-value-validation:XValidation:message="wildcard is not supported in selector",rule="!self.contains('*')"
+	Labels map[string]string `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 }

@@ -6,5 +6,9 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: sidecargenerator-sample
 spec:
-  url: "https://example.com/dependencies"
-  refreshPeriod: 2m 
+  url: "https://httpd-default.apps-crc.testing/dependencies"
+  refreshPeriod: 2m
+  insecureSkipTLSVerify: true
+  workloadSelector:
+    labels: 
+      app: myapp
