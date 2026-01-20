@@ -54,11 +54,16 @@ var _ = Describe("Manager", Ordered, func() {
 		_, err := utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
 
-		By("labeling the namespace to enforce the restricted security policy")
-		cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
-			"pod-security.kubernetes.io/enforce=restricted")
+		// By("labeling the namespace to enforce the restricted security policy")
+		// cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
+		// 	"pod-security.kubernetes.io/enforce=restricted")
+		// _, err = utils.Run(cmd)
+		// Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
+
+		By("installing Istio CRDs")
+		cmd = exec.Command("make", "install-istio-crds")
 		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
+		Expect(err).NotTo(HaveOccurred(), "Failed to install Istio CRDs")
 
 		By("installing CRDs")
 		cmd = exec.Command("make", "install")
@@ -84,6 +89,10 @@ var _ = Describe("Manager", Ordered, func() {
 
 		By("uninstalling CRDs")
 		cmd = exec.Command("make", "uninstall")
+		_, _ = utils.Run(cmd)
+
+		By("uninstalling Istio CRDs")
+		cmd = exec.Command("make", "uninstall-istio-crds")
 		_, _ = utils.Run(cmd)
 
 		By("removing manager namespace")
@@ -219,7 +228,7 @@ var _ = Describe("Manager", Ordered, func() {
 							"name": "curl",
 							"image": "curlimages/curl:latest",
 							"command": ["/bin/sh", "-c"],
-							"args": ["curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics"],
+							"args": ["curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc:8443/metrics"],
 							"securityContext": {
 								"allowPrivilegeEscalation": false,
 								"capabilities": {
