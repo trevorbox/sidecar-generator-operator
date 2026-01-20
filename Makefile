@@ -370,3 +370,11 @@ ifeq (,$(wildcard $(ISTIO_CRD)))
 	@mkdir -p ./config/crd/istio
 	@curl -sSLo ./config/crd/istio/crd-all.gen.yaml https://raw.githubusercontent.com/istio/istio/refs/heads/master/manifests/charts/base/files/crd-all.gen.yaml
 endif
+
+.PHONY: install-istio-crds
+install-istio-crds: fetch-external-crds ## Install Istio CRDs into the K8s cluster specified in ~/.kube/config.
+	$(KUBECTL) apply -f ./config/crd/istio/crd-all.gen.yaml
+
+.PHONY: uninstall-istio-crds
+uninstall-istio-crds: manifests kustomize ## Uninstall Istio CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+	$(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f ./config/crd/istio/crd-all.gen.yaml
